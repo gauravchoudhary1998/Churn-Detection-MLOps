@@ -1,0 +1,5 @@
+# Runtime dependencies, added incrementally as each phase needs them.
+# Phase 2 will add: pandas, dvc[s3], kaggle
+# Phase 3 will add: scikit-learn, mlflow
+# Phase 4 will add: sagemaker, boto3
+# Phase 6 will add: evidently

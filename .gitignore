@@ -1,0 +1,57 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+*.egg
+
+# --- Virtual environments ---
+.venv/
+venv/
+env/
+
+# --- Environment / secrets ---
+.env
+*.pem
+*.key
+kaggle.json
+.aws/
+
+# --- Data (versioned via DVC, not git) ---
+data/raw/*
+data/processed/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+
+# --- DVC ---
+/.dvc/cache
+/.dvc/tmp
+
+# --- MLflow ---
+mlruns/
+mlartifacts/
+
+# --- Model artifacts ---
+*.pkl
+*.joblib
+*.tar.gz
+model/
+
+# --- Terraform ---
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/*.tfvars
+!terraform/*.tfvars.example
+terraform/.terraform.lock.hcl
+terraform/crash.log
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- OS / editor ---
+.DS_Store
+.vscode/
+.idea/
