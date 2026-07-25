@@ -55,10 +55,36 @@ make setup      # creates .venv, installs dev deps, installs the package in edit
 Copy `.env.example` to `.env` and fill in AWS / Kaggle credentials before running
 data or training steps.
 
+## Data
+
+The dataset is the [Telco Customer Churn](https://www.kaggle.com/datasets/blastchar/telco-customer-churn)
+dataset from Kaggle, versioned with DVC against an S3 remote (bucket provisioned
+by `terraform/`, not created by hand).
+
+```bash
+# One-time infra: creates the S3 bucket DVC pushes to
+cd terraform && terraform init && terraform apply
+
+# Pull the raw CSV from Kaggle (needs a Kaggle API token — see .env.example)
+make download-data
+
+# Clean it: drop customerID, fix TotalCharges, encode the target
+make prepare-data
+
+# Version both raw and processed data with DVC (bucket name comes from
+# `terraform output dvc_bucket_name`)
+dvc add data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv data/processed/telco_churn_clean.csv
+dvc remote add -d storage s3://<dvc-bucket-name>/dvc-store
+dvc push
+```
+
+Data is ~26.6% churn — imbalanced enough that Phase 3's model evaluation needs to
+lead with precision/recall, not raw accuracy.
+
 ## Roadmap
 
 - [x] Phase 1 — Repo scaffold, env setup
-- [ ] Phase 2 — Data ingestion + DVC versioning (S3 remote)
+- [x] Phase 2 — Data ingestion + DVC versioning (S3 remote)
 - [ ] Phase 3 — Training + MLflow tracking/registry
 - [ ] Phase 4 — SageMaker packaging + Terraform infra
 - [ ] Phase 5 — CI/CD with a real quality gate
