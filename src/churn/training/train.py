@@ -36,11 +36,15 @@ def load_config(path: Path) -> dict:
         return yaml.safe_load(f)
 
 
-def build_pipeline(model_name: str, params: dict, categorical_cols: list, numeric_cols: list) -> Pipeline:
+def build_pipeline(model_name: str, params: dict, categorical_idx: list, numeric_idx: list) -> Pipeline:
+    # Columns selected by position, not name, so the fitted pipeline accepts
+    # a plain array at prediction time — the SageMaker serving container
+    # doesn't have pandas installed, so inference.py can't hand it a
+    # DataFrame (see inference.py's FEATURE_COLUMNS for the required order).
     preprocessor = ColumnTransformer(
         transformers=[
-            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_cols),
-            ("num", StandardScaler(), numeric_cols),
+            ("cat", OneHotEncoder(handle_unknown="ignore"), categorical_idx),
+            ("num", StandardScaler(), numeric_idx),
         ]
     )
     model = MODEL_REGISTRY[model_name](**params)
@@ -54,8 +58,10 @@ def train(config: dict) -> dict:
     X = df.drop(columns=[target])
     y = df[target]
 
-    categorical_cols = X.select_dtypes(include="object").columns.tolist()
-    numeric_cols = X.select_dtypes(exclude="object").columns.tolist()
+    feature_columns = X.columns.tolist()
+    categorical_idx = [feature_columns.index(c) for c in X.select_dtypes(include="object").columns]
+    numeric_idx = [feature_columns.index(c) for c in X.select_dtypes(exclude="object").columns]
+    print(f"Feature order (inference.py's FEATURE_COLUMNS must match): {feature_columns}")
 
     X_train, X_test, y_train, y_test = train_test_split(
         X,
@@ -75,7 +81,7 @@ def train(config: dict) -> dict:
         params = candidate["params"]
 
         with mlflow.start_run(run_name=name) as run:
-            pipeline = build_pipeline(name, params, categorical_cols, numeric_cols)
+            pipeline = build_pipeline(name, params, categorical_idx, numeric_idx)
             pipeline.fit(X_train, y_train)
 
             y_pred = pipeline.predict(X_test)

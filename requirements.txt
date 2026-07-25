@@ -2,10 +2,16 @@
 pandas==2.3.3
 dvc[s3]==3.67.1
 kaggle==1.8.4
-scikit-learn==1.9.0
+
+# Pinned to 1.4.2, NOT the latest scikit-learn: this is the newest version
+# AWS's prebuilt SageMaker scikit-learn inference container supports
+# (sagemaker-scikit-learn:1.4-2). A model pickled with a newer sklearn is not
+# guaranteed to unpickle correctly in an older one, so training and serving
+# must use the same version deliberately, not coincidentally.
+scikit-learn==1.4.2
+joblib==1.5.3
 mlflow==3.14.0
 PyYAML==6.0.3
 python-dotenv==1.2.2
 
-# Phase 4 will add: sagemaker, boto3
 # Phase 6 will add: evidently

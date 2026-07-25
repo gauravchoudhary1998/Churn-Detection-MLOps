@@ -2,7 +2,7 @@ PYTHON := /opt/homebrew/opt/python@3.11/bin/python3.11
 VENV := .venv
 VENV_BIN := $(VENV)/bin
 
-.PHONY: setup install download-data prepare-data train mlflow-ui clean
+.PHONY: setup install download-data prepare-data train mlflow-ui package-model destroy clean
 
 setup:
 	$(PYTHON) -m venv $(VENV)
@@ -27,8 +27,18 @@ mlflow-ui:
 	# it'll intercept requests and return 403, so this stays off the default port.
 	$(VENV_BIN)/mlflow ui --backend-store-uri sqlite:///mlflow.db --port 5001
 
+package-model:
+	$(VENV_BIN)/python -m churn.inference.package
+
+# Tears down every billable AWS resource this project created (SageMaker
+# endpoint, IAM role, S3 bucket). Interactive — terraform will ask you to
+# type "yes" before it deletes anything.
+destroy:
+	cd terraform && terraform destroy
+
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
+	rm -rf build
 
 # `make destroy` (AWS teardown) lands in Phase 4 once Terraform-managed
 # resources exist to tear down.
