@@ -1,0 +1,27 @@
+data_path: data/processed/telco_churn_clean.csv
+target: Churn
+
+test_size: 0.2
+random_state: 42
+
+experiment_name: churn-prediction
+registered_model_name: churn-classifier
+
+# Metric used to pick which candidate gets registered. ROC-AUC is
+# threshold-independent, which matters here since we never tuned a decision
+# threshold — it just compares how well each model ranks churners overall.
+primary_metric: roc_auc
+
+candidates:
+  - name: logistic_regression
+    params:
+      C: 1.0
+      max_iter: 1000
+      class_weight: balanced
+
+  - name: random_forest
+    params:
+      n_estimators: 300
+      max_depth: 8
+      class_weight: balanced
+      n_jobs: -1

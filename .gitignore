@@ -29,6 +29,7 @@ kaggle.json
 # --- MLflow ---
 mlruns/
 mlartifacts/
+mlflow.db
 
 # --- Model artifacts ---
 *.pkl

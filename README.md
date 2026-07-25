@@ -78,14 +78,33 @@ dvc remote add -d storage s3://<dvc-bucket-name>/dvc-store
 dvc push
 ```
 
-Data is ~26.6% churn — imbalanced enough that Phase 3's model evaluation needs to
-lead with precision/recall, not raw accuracy.
+Data is ~26.6% churn — imbalanced enough that model evaluation needs to lead
+with precision/recall/ROC-AUC, not raw accuracy.
+
+## Training
+
+```bash
+make train              # trains all candidates, logs to MLflow, registers the best
+make mlflow-ui          # inspect runs/models at http://127.0.0.1:5000
+```
+
+[src/churn/training/train.py](src/churn/training/train.py) trains every candidate listed in
+[config/train_config.yaml](config/train_config.yaml) (currently logistic regression and random
+forest, both `class_weight="balanced"` to account for the imbalance), logs params/metrics/model
+for each as its own MLflow run under the `churn-prediction` experiment, then registers the
+candidate with the best ROC-AUC as `churn-classifier` in the MLflow Model Registry and tags it
+with the `champion` alias.
+
+Tracking backend is SQLite (`MLFLOW_TRACKING_URI=sqlite:///mlflow.db`), not the plain file
+store — the Model Registry requires a database-backed store, so a plain `file:` store would
+train and log fine but fail at the registration step. Everything runs locally, no server
+process or AWS resources needed for this phase.
 
 ## Roadmap
 
 - [x] Phase 1 — Repo scaffold, env setup
 - [x] Phase 2 — Data ingestion + DVC versioning (S3 remote)
-- [ ] Phase 3 — Training + MLflow tracking/registry
+- [x] Phase 3 — Training + MLflow tracking/registry
 - [ ] Phase 4 — SageMaker packaging + Terraform infra
 - [ ] Phase 5 — CI/CD with a real quality gate
 - [ ] Phase 6 — Drift monitoring (Evidently + CloudWatch)
