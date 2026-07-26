@@ -5,9 +5,9 @@ variable "aws_region" {
 }
 
 variable "aws_profile" {
-  description = "Named AWS CLI profile to use. Leave null to use the default credential chain (env vars, SSO, etc.)."
+  description = "Named AWS CLI profile to use. Leave null to use the default credential chain (env vars, SSO, etc.) — must be null in CI, which authenticates via env vars only and has no shared config file. Set it locally via a gitignored terraform.tfvars, not by changing this default."
   type        = string
-  default     = "default"
+  default     = null
 }
 
 variable "project_name" {
