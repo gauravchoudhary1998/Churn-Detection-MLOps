@@ -32,15 +32,43 @@ data "aws_iam_policy_document" "ci" {
       "iam:CreateRole",
       "iam:DeleteRole",
       "iam:GetRole",
+      "iam:UpdateRole",
+      "iam:UpdateAssumeRolePolicy",
       "iam:TagRole",
       "iam:UntagRole",
+      "iam:ListRoleTags",
       "iam:PutRolePolicy",
       "iam:GetRolePolicy",
       "iam:DeleteRolePolicy",
       "iam:ListRolePolicies",
+      "iam:ListAttachedRolePolicies",
       "iam:PassRole",
     ]
     resources = [aws_iam_role.sagemaker_execution.arn]
+  }
+
+  # Every `terraform apply` refreshes every resource in state, including the
+  # CI user's own entries — so the CI user needs permission to read/manage
+  # itself, not just the resources it manages. Self-referential, but that's
+  # expected: this identity is Terraform-managed like everything else here,
+  # not a special case exempt from the same lifecycle.
+  statement {
+    sid = "ManageSelf"
+    actions = [
+      "iam:CreateUser",
+      "iam:GetUser",
+      "iam:UpdateUser",
+      "iam:DeleteUser",
+      "iam:TagUser",
+      "iam:UntagUser",
+      "iam:ListUserTags",
+      "iam:ListAttachedUserPolicies",
+      "iam:PutUserPolicy",
+      "iam:GetUserPolicy",
+      "iam:DeleteUserPolicy",
+      "iam:ListUserPolicies",
+    ]
+    resources = [aws_iam_user.ci.arn]
   }
 
   statement {
