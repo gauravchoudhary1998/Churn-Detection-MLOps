@@ -13,5 +13,5 @@ joblib==1.5.3
 mlflow==3.14.0
 PyYAML==6.0.3
 python-dotenv==1.2.2
-
-# Phase 6 will add: evidently
+evidently==0.7.21
+boto3==1.43.46

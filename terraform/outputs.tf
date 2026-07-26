@@ -8,3 +8,8 @@ output "sagemaker_endpoint_name" {
   value       = aws_sagemaker_endpoint.churn.name
 }
 
+output "drift_alarm_name" {
+  description = "CloudWatch alarm watching data drift — `aws cloudwatch describe-alarms --alarm-names <this>` to check its state."
+  value       = aws_cloudwatch_metric_alarm.data_drift.alarm_name
+}
+

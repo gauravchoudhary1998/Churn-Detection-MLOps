@@ -2,7 +2,7 @@ PYTHON := /opt/homebrew/opt/python@3.11/bin/python3.11
 VENV := .venv
 VENV_BIN := $(VENV)/bin
 
-.PHONY: setup install download-data prepare-data train gate mlflow-ui mlflow-pull mlflow-push package-model destroy clean
+.PHONY: setup install download-data prepare-data train gate mlflow-ui mlflow-pull mlflow-push package-model check-drift destroy clean
 
 setup:
 	$(PYTHON) -m venv $(VENV)
@@ -32,6 +32,14 @@ mlflow-ui:
 
 package-model:
 	$(VENV_BIN)/python -m churn.inference.package
+
+# Manual, on-demand — no live traffic to check drift against, so this
+# compares a synthetic drifted sample against the training baseline and
+# reports the result to CloudWatch (see terraform/monitoring.tf for the
+# alarm watching it). Point at a real CSV with --current instead once
+# there's real data to check.
+check-drift:
+	$(VENV_BIN)/python -m churn.monitoring.drift --synthetic
 
 # CI shares its training history through S3 the same way it shares data —
 # pull before you want to see CI's runs in `make mlflow-ui`, push after a

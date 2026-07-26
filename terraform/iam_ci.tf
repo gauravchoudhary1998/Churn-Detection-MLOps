@@ -64,12 +64,35 @@ data "aws_iam_policy_document" "ci" {
       "iam:UntagUser",
       "iam:ListUserTags",
       "iam:ListAttachedUserPolicies",
-      "iam:PutUserPolicy",
-      "iam:GetUserPolicy",
-      "iam:DeleteUserPolicy",
-      "iam:ListUserPolicies",
+      "iam:AttachUserPolicy",
+      "iam:DetachUserPolicy",
     ]
     resources = [aws_iam_user.ci.arn]
+  }
+
+  # Managed, not inline (aws_iam_user_policy hit IAM's 2048-byte inline
+  # policy cap once this file grew past a few statements — a hard AWS
+  # limit, not something to work around by trimming permissions). A
+  # managed policy allows up to 6144 characters, real headroom for future
+  # phases. Resource is a manually-constructed ARN, not
+  # aws_iam_policy.ci.arn — referencing the resource's own output here
+  # would make the policy document depend on the very policy resource it
+  # defines, a real circular dependency Terraform can't resolve.
+  statement {
+    sid = "ManageOwnPolicy"
+    actions = [
+      "iam:CreatePolicy",
+      "iam:GetPolicy",
+      "iam:GetPolicyVersion",
+      "iam:ListPolicyVersions",
+      "iam:CreatePolicyVersion",
+      "iam:DeletePolicyVersion",
+      "iam:DeletePolicy",
+      "iam:TagPolicy",
+      "iam:UntagPolicy",
+      "iam:ListPolicyTags",
+    ]
+    resources = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:policy/${var.project_name}-ci-policy"]
   }
 
   statement {
@@ -100,10 +123,31 @@ data "aws_iam_policy_document" "ci" {
     actions   = ["sts:GetCallerIdentity"]
     resources = ["*"] # Doesn't support resource-level scoping.
   }
+
+  # Manages the alarm *definition* only — CI's terraform apply creates and
+  # refreshes this resource on every run, same as everything else in state.
+  # The metric it watches is pushed separately, manually, by the user's own
+  # local `make check-drift` (see monitoring.tf) — not by CI.
+  statement {
+    sid = "ManageDriftAlarm"
+    actions = [
+      "cloudwatch:PutMetricAlarm",
+      "cloudwatch:DescribeAlarms",
+      "cloudwatch:DeleteAlarms",
+      "cloudwatch:ListTagsForResource",
+      "cloudwatch:TagResource",
+      "cloudwatch:UntagResource",
+    ]
+    resources = ["arn:aws:cloudwatch:${var.aws_region}:${data.aws_caller_identity.current.account_id}:alarm:${var.project_name}-data-drift"]
+  }
 }
 
-resource "aws_iam_user_policy" "ci" {
+resource "aws_iam_policy" "ci" {
   name   = "${var.project_name}-ci-policy"
-  user   = aws_iam_user.ci.name
   policy = data.aws_iam_policy_document.ci.json
+}
+
+resource "aws_iam_user_policy_attachment" "ci" {
+  user       = aws_iam_user.ci.name
+  policy_arn = aws_iam_policy.ci.arn
 }

@@ -218,6 +218,29 @@ gate specifically checks recall rather than reusing the selection metric.
   standard tradeoff being a long-lived credential sitting in GitHub's secret store instead of
   short-lived per-run tokens.
 
+## Monitoring
+
+```bash
+make check-drift   # compares a synthetic drifted sample against the training baseline
+```
+
+This project has no real production traffic to check for drift against, so
+[src/churn/monitoring/drift.py](src/churn/monitoring/drift.py) defaults to generating a
+deliberately-perturbed copy of the training data (`--synthetic`) as a stand-in — a 3x scale shift
+on `MonthlyCharges` and a categorical column forced to a single value, both large enough for
+[Evidently](https://www.evidentlyai.com/) to clearly flag. Point `--current` at a real CSV instead
+once there's real data worth checking. The script reports the share of drifted columns as a custom
+CloudWatch metric (`ChurnMLOps/DriftedColumnShare`), which
+[terraform/monitoring.tf](terraform/monitoring.tf) has an alarm watching (`> 0.3`, i.e. more than
+30% of columns drifted).
+
+Deliberately **manual, not scheduled** — no live traffic means no principled schedule to run this
+on, so it's a command you run when you want a reading, not a cron job pushing meaningless
+"still no drift against no traffic" data points forever. The alarm has no SNS/email notification
+wired up either — its state is visible via `aws cloudwatch describe-alarms --alarm-names
+$(terraform -chdir=terraform output -raw drift_alarm_name)` or the console, kept intentionally
+simple for a project where nothing is actually watching it continuously.
+
 ## Roadmap
 
 - [x] Phase 1 — Repo scaffold, env setup
