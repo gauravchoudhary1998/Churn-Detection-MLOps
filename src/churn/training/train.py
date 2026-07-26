@@ -36,6 +36,17 @@ def load_config(path: Path) -> dict:
         return yaml.safe_load(f)
 
 
+def ensure_experiment(name: str) -> None:
+    # A relative artifact location, not mlflow's own absolute-path default:
+    # mlflow.db is shared between your machine and CI (see README's Training
+    # section), but a local filesystem path baked in on one machine is
+    # meaningless on the other. Relative works because both always run from
+    # the repo root.
+    if mlflow.get_experiment_by_name(name) is None:
+        mlflow.create_experiment(name, artifact_location="mlruns")
+    mlflow.set_experiment(name)
+
+
 def build_pipeline(model_name: str, params: dict, categorical_idx: list, numeric_idx: list) -> Pipeline:
     # Columns selected by position, not name, so the fitted pipeline accepts
     # a plain array at prediction time — the SageMaker serving container
@@ -71,7 +82,7 @@ def train(config: dict) -> dict:
         stratify=y,
     )
 
-    mlflow.set_experiment(config["experiment_name"])
+    ensure_experiment(config["experiment_name"])
 
     primary_metric = config["primary_metric"]
     results = []
