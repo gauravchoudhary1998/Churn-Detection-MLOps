@@ -1,21 +1,8 @@
-# IAM identity for GitHub Actions (static access key, per user's choice —
-# no OIDC federation in this project). Scoped to exactly what the CI
-# pipeline does: `dvc pull` + syncing the shared mlflow.db (both just object
-# access in the data bucket), read/write Terraform state (the separate
-# state bucket), and manage this project's specific SageMaker + IAM
-# resources — not account-wide access.
-
 resource "aws_iam_user" "ci" {
   name = "${var.project_name}-ci"
 }
 
 data "aws_iam_policy_document" "ci" {
-  # s3:* rather than an exact action list: scoped tightly to two specific
-  # buckets, but covers both `dvc pull`/`dvc push` object access AND
-  # Terraform managing the DVC bucket's own config (versioning, encryption,
-  # lifecycle) AND the state bucket's object/lockfile read-write — enumerating
-  # every individual S3 API Terraform might call is fragile, the bucket-level
-  # scoping is what actually keeps this least-privilege.
   statement {
     sid     = "DataAndStateBuckets"
     actions = ["s3:*"]
@@ -48,11 +35,6 @@ data "aws_iam_policy_document" "ci" {
     resources = [aws_iam_role.sagemaker_execution.arn]
   }
 
-  # Every `terraform apply` refreshes every resource in state, including the
-  # CI user's own entries — so the CI user needs permission to read/manage
-  # itself, not just the resources it manages. Self-referential, but that's
-  # expected: this identity is Terraform-managed like everything else here,
-  # not a special case exempt from the same lifecycle.
   statement {
     sid = "ManageSelf"
     actions = [
@@ -70,14 +52,9 @@ data "aws_iam_policy_document" "ci" {
     resources = [aws_iam_user.ci.arn]
   }
 
-  # Managed, not inline (aws_iam_user_policy hit IAM's 2048-byte inline
-  # policy cap once this file grew past a few statements — a hard AWS
-  # limit, not something to work around by trimming permissions). A
-  # managed policy allows up to 6144 characters, real headroom for future
-  # phases. Resource is a manually-constructed ARN, not
-  # aws_iam_policy.ci.arn — referencing the resource's own output here
-  # would make the policy document depend on the very policy resource it
-  # defines, a real circular dependency Terraform can't resolve.
+  # ARN constructed manually, not aws_iam_policy.ci.arn: referencing the
+  # resource here would create a circular dependency on the policy document
+  # that defines it.
   statement {
     sid = "ManageOwnPolicy"
     actions = [
@@ -121,13 +98,9 @@ data "aws_iam_policy_document" "ci" {
   statement {
     sid       = "CallerIdentity"
     actions   = ["sts:GetCallerIdentity"]
-    resources = ["*"] # Doesn't support resource-level scoping.
+    resources = ["*"]
   }
 
-  # Manages the alarm *definition* only — CI's terraform apply creates and
-  # refreshes this resource on every run, same as everything else in state.
-  # The metric it watches is pushed separately, manually, by the user's own
-  # local `make check-drift` (see monitoring.tf) — not by CI.
   statement {
     sid = "ManageDriftAlarm"
     actions = [

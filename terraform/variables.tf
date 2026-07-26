@@ -1,11 +1,11 @@
 variable "aws_region" {
-  description = "AWS region for all resources in this project."
+  description = "AWS region for all resources."
   type        = string
   default     = "us-west-1"
 }
 
 variable "aws_profile" {
-  description = "Named AWS CLI profile to use. Leave null to use the default credential chain (env vars, SSO, etc.) — must be null in CI, which authenticates via env vars only and has no shared config file. Set it locally via a gitignored terraform.tfvars, not by changing this default."
+  description = "Named AWS CLI profile. Null to use the default credential chain."
   type        = string
   default     = null
 }
@@ -17,7 +17,7 @@ variable "project_name" {
 }
 
 variable "tfstate_bucket" {
-  description = "Name of the separate, stable bucket holding Terraform's own state (created once, outside Terraform — see backend.tf). Not the same as the DVC data bucket. Must match backend.tf's literal bucket name (that block can't reference this variable)."
+  description = "Bucket holding Terraform's own state. Must match backend.tf."
   type        = string
   default     = "mlops-tfstate-729723728304"
 }

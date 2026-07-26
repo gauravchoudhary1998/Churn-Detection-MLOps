@@ -1,160 +1,159 @@
 # Customer Churn Prediction — AWS-Native MLOps Pipeline
 
-An end-to-end, production-style ML pipeline for predicting telecom customer churn.
-The focus is the *pipeline*, not the model: data versioning, experiment tracking,
-infrastructure as code, an automated quality gate, and monitoring — the parts that
-turn a notebook model into something a team could actually operate.
-
-> Status: work in progress, built phase by phase. See [Roadmap](#roadmap) below.
+An end-to-end MLOps pipeline for predicting telecom customer churn: data versioning, experiment
+tracking, infrastructure as code, automated CI/CD with a real quality gate, and production
+monitoring, all on AWS.
 
 ## Architecture
 
-_Diagram coming in Phase 7._
+```mermaid
+flowchart LR
+    KG[Kaggle CSV] --> PR["prepare.py<br/>clean data"]
+    PR --> DVC[("S3<br/>DVC data")]
+    DVC --> TR["train.py<br/>train + register in MLflow"]
+    TR --> GT{"gate.py<br/>recall ≥ 0.70?"}
+    GT -- fail --> STOP["Pipeline stops<br/>nothing deploys"]
+    GT -- pass --> PK["package.py<br/>build model.tar.gz"]
+    PK --> TF["terraform apply"]
+    TF --> EP["SageMaker Serverless<br/>Endpoint"]
+
+    DR["drift.py<br/>synthetic vs baseline"] --> CW["CloudWatch metric<br/>DriftedColumnShare"]
+    CW --> AL{"Alarm<br/>share > 0.3?"}
+
+    GH["GitHub Actions<br/>(push to main)"] -.orchestrates.-> TR
+    GH -.-> GT
+    GH -.-> PK
+    GH -.-> TF
+```
+
+Solid arrows show the data/model flow. Dashed arrows show what GitHub Actions automates end to
+end on every push. Drift monitoring runs independently — see [Monitoring](#monitoring).
 
 ## Tech stack
 
-| Layer                | Tool                                   |
-|-----------------------|-----------------------------------------|
-| Data versioning        | DVC (S3 remote)                        |
-| Experiment tracking    | MLflow (tracking + model registry)     |
-| Model                    | scikit-learn                          |
-| Training / deployment   | AWS SageMaker                          |
-| Infrastructure as code  | Terraform                              |
-| CI/CD                     | GitHub Actions (train → validate → deploy) |
-| Drift monitoring          | Evidently AI + CloudWatch alarm       |
+| Layer                  | Tool                                        |
+|-------------------------|----------------------------------------------|
+| Data versioning          | DVC (S3 remote)                              |
+| Experiment tracking      | MLflow (tracking + model registry)           |
+| Model                    | scikit-learn                                 |
+| Training / deployment    | AWS SageMaker                                |
+| Infrastructure as code   | Terraform                                    |
+| CI/CD                    | GitHub Actions (train → validate → deploy)   |
+| Drift monitoring         | Evidently AI + CloudWatch alarm              |
 
 ## Repo structure
 
 ```
 .
-├── .github/workflows/   # CI/CD pipelines (Phase 5)
-├── config/              # thresholds, hyperparameters
-├── data/                # DVC-tracked raw/processed data (not in git)
-├── docs/                # architecture diagram, write-ups
-├── notebooks/           # exploratory analysis only — not part of the pipeline
-├── scripts/             # one-off / operational scripts
+├── .github/workflows/    # CI/CD pipeline
+├── config/               # hyperparameters, quality gate threshold
+├── data/                 # DVC-tracked raw/processed data (not in git)
+├── docs/                 # supporting write-ups
+├── notebooks/            # exploratory analysis, not part of the pipeline
+├── scripts/              # data download
 ├── src/churn/
-│   ├── data/            # data loading & preprocessing
-│   ├── training/         # training + evaluation
-│   ├── inference/         # SageMaker inference entry point
-│   └── monitoring/         # Evidently drift checks
-├── terraform/            # AWS infra: IAM roles, S3, endpoint config
+│   ├── data/              # cleaning
+│   ├── training/           # training, evaluation, quality gate
+│   ├── inference/            # SageMaker inference entry point, packaging
+│   └── monitoring/            # drift detection
+├── terraform/
+│   ├── backend.tf             # remote state
+│   ├── s3.tf                   # data bucket
+│   ├── iam.tf                   # SageMaker execution role
+│   ├── iam_ci.tf                  # CI identity and policy
+│   ├── sagemaker.tf                # model, endpoint config, endpoint
+│   └── monitoring.tf                # drift alarm
 ├── Makefile
 └── requirements*.txt
 ```
 
 ## Setup
 
-Requires Python 3.11 (see `Makefile` — MLOps tooling here lags behind the newest
-Python releases, so this project pins to 3.11 rather than the system default).
+Requires Python 3.11.
 
 ```bash
-make setup      # creates .venv, installs dev deps, installs the package in editable mode
+make setup      # creates .venv, installs dependencies, installs the package in editable mode
 ```
 
-Copy `.env.example` to `.env` and fill in AWS / Kaggle credentials before running
-data or training steps.
+Copy `.env.example` to `.env` and fill in AWS and Kaggle credentials before running data or
+training steps.
 
 ## Data
 
 The dataset is the [Telco Customer Churn](https://www.kaggle.com/datasets/blastchar/telco-customer-churn)
-dataset from Kaggle, versioned with DVC against an S3 remote (bucket provisioned
-by `terraform/`, not created by hand).
+dataset from Kaggle, versioned with DVC against an S3 remote provisioned by Terraform.
 
 ```bash
-# One-time infra: creates the S3 bucket DVC pushes to
-cd terraform && terraform init && terraform apply
+cd terraform && terraform init && terraform apply   # provisions the S3 bucket
 
-# Pull the raw CSV from Kaggle (needs a Kaggle API token — see .env.example)
-make download-data
+make download-data    # pulls the raw CSV from Kaggle
+make prepare-data     # cleans it: drops customerID, fixes TotalCharges, encodes the target
 
-# Clean it: drop customerID, fix TotalCharges, encode the target
-make prepare-data
-
-# Version both raw and processed data with DVC (bucket name comes from
-# `terraform output dvc_bucket_name`)
 dvc add data/raw/WA_Fn-UseC_-Telco-Customer-Churn.csv data/processed/telco_churn_clean.csv
 dvc remote add -d storage s3://<dvc-bucket-name>/dvc-store
 dvc push
 ```
 
-Data is ~26.6% churn — imbalanced enough that model evaluation needs to lead
-with precision/recall/ROC-AUC, not raw accuracy.
+The dataset is about 26.6% churn — imbalanced enough that evaluation leads with precision,
+recall, and ROC-AUC rather than raw accuracy.
 
 ## Training
 
 ```bash
-make train              # trains all candidates, logs to MLflow, registers the best
-make mlflow-ui          # inspect runs/models at http://127.0.0.1:5001
+make train        # trains all candidates, logs to MLflow, registers the best
+make mlflow-ui     # inspect runs and models at http://127.0.0.1:5001
 ```
 
-[src/churn/training/train.py](src/churn/training/train.py) trains every candidate listed in
-[config/train_config.yaml](config/train_config.yaml) (currently logistic regression and random
-forest, both `class_weight="balanced"` to account for the imbalance), logs params/metrics/model
-for each as its own MLflow run under the `churn-prediction` experiment, then registers the
-candidate with the best ROC-AUC as `churn-classifier` in the MLflow Model Registry and tags it
-with the `champion` alias.
+[train.py](src/churn/training/train.py) trains every candidate defined in
+[train_config.yaml](config/train_config.yaml) — currently logistic regression and random forest,
+both weighted to account for class imbalance — logs parameters, metrics, and the model artifact
+for each as its own MLflow run, then registers the candidate with the best ROC-AUC as
+`churn-classifier` in the MLflow Model Registry under a `champion` alias.
 
-Tracking backend is SQLite (`MLFLOW_TRACKING_URI=sqlite:///mlflow.db`), not the plain file
-store — the Model Registry requires a database-backed store, so a plain `file:` store would
-train and log fine but fail at the registration step. Everything runs locally, no server
-process or AWS resources needed for this phase.
-
-**A local file doesn't survive CI's ephemeral runners on its own.** Every GitHub Actions run
-starts on a brand-new VM — without help, each run would create its own empty `mlflow.db`, register
-its champion as "version 1" every single time, and lose all of it the moment the job ends. The
-CI/CD workflow works around this by treating `mlflow.db` the same way DVC treats data: pull the
-shared copy from S3 before training, push the updated one back after (`mlflow/` prefix in the same
-bucket). To see CI's training history in your own `make mlflow-ui`:
+Tracking uses a SQLite backend rather than MLflow's plain file store, since the Model Registry
+requires a database-backed store. Because CI runs on fresh, ephemeral machines, the tracking
+database is synced through the same S3 bucket used for data versioning — pulled before training
+and pushed back after — so registry history and version numbers stay continuous across local and
+CI runs instead of resetting on every pipeline execution.
 
 ```bash
-make mlflow-pull   # fetch the shared history CI has been building
-make mlflow-ui
+make mlflow-pull   # bring CI's training history into your local UI
+make mlflow-push   # publish a local run to the shared history
 ```
 
-Not automatic on every `make train` — most local runs are just iteration, and `make mlflow-push`
-is there when you actually want a local result to join the shared history. The accepted
-limitation: this doesn't handle concurrent writers safely (two simultaneous CI runs could clobber
-each other's history), which is fine for a solo project with sequential pushes but wouldn't be for
-a team — the real production fix would be a standing MLflow Tracking Server backed by a proper
-database, deliberately not built here to stay serverless/cost-conscious.
+This isn't automatic on every `make train`, since most local runs are exploratory. Note that this
+approach doesn't provide concurrent-write safety; it's appropriate for a single-operator project,
+not a multi-writer production setup, which would call for a dedicated MLflow tracking server.
 
 ## Deploy
 
 ```bash
-make package-model                              # exports the MLflow champion model to build/model.tar.gz
-cd terraform && terraform init && terraform apply   # uploads it to S3, deploys the SageMaker endpoint
+make package-model                                  # exports the MLflow champion to build/model.tar.gz
+cd terraform && terraform init && terraform apply    # uploads it and deploys the SageMaker endpoint
 ```
 
-`make package-model` must run before `terraform apply` — Terraform uploads whatever's currently
-at `build/model.tar.gz`, it doesn't build it. Re-run both any time you want to redeploy a newly
-trained champion.
+`make package-model` must run before `terraform apply`, since Terraform uploads whatever tarball
+currently exists rather than building it.
 
-Deployment is [SageMaker Serverless Inference](https://docs.aws.amazon.com/sagemaker/latest/dg/serverless-endpoints.html),
-not an always-on real-time endpoint — it scales to zero between requests, so there's no idle-hour
-billing while the endpoint just exists (deliberate cost-consciousness call, see
-[Cost & cleanup](#cost--cleanup)). [src/churn/inference/inference.py](src/churn/inference/inference.py)
-implements the four functions AWS's prebuilt scikit-learn container expects
-(`model_fn`/`input_fn`/`predict_fn`/`output_fn`); [package.py](src/churn/inference/package.py) exports
-the MLflow `@champion` model, re-serializes it as `model.joblib`, and tars it with the inference
-script into `model.joblib` + `code/inference.py` — that's genuinely the whole package, no extra
-dependencies bundled.
+Deployment uses [SageMaker Serverless Inference](https://docs.aws.amazon.com/sagemaker/latest/dg/serverless-endpoints.html)
+rather than an always-on real-time endpoint, so there is no idle-hour billing while the endpoint
+exists but receives no traffic. [inference.py](src/churn/inference/inference.py) implements the
+four functions AWS's prebuilt scikit-learn container expects
+(`model_fn`/`input_fn`/`predict_fn`/`output_fn`); [package.py](src/churn/inference/package.py)
+exports the MLflow champion model, re-serializes it as `model.joblib`, and packages it with the
+inference script — no additional runtime dependencies bundled.
 
-**Two constraints that matter, both about keeping training and serving in lockstep:**
-- `requirements.txt` pins `scikit-learn==1.4.2`, not the latest release — that's the newest
-  version AWS's prebuilt SageMaker scikit-learn container supports. A model pickled with a newer
-  scikit-learn isn't guaranteed to unpickle correctly in an older one.
-- The container doesn't have pandas installed, and there's no reliable way to add it at
-  deploy time (its own dependency-install mechanism turned out to be broken for this container —
-  falls back to a `pip install --user` the serving process can't see on its own `sys.path`, so the
-  import fails right after pip reports success). Rather than work around that, `train.py`'s
-  `ColumnTransformer` selects feature columns by **position**, not name, so the fitted pipeline
-  accepts a plain Python list — `inference.py` builds one straight from the JSON request in a
-  fixed column order (`FEATURE_COLUMNS`, must match `data/processed/telco_churn_clean.csv`'s
-  column order). No pandas anywhere in the serving path.
+Two constraints keep training and serving in lockstep:
+- `requirements.txt` pins `scikit-learn==1.4.2`, the newest version supported by AWS's prebuilt
+  SageMaker scikit-learn container. Models pickled with a newer scikit-learn aren't guaranteed to
+  unpickle correctly against an older one.
+- The container doesn't include pandas. Rather than add it as a runtime dependency, the model's
+  `ColumnTransformer` selects features by position rather than by name, so `inference.py` builds
+  a plain Python list from the incoming JSON request in a fixed column order
+  (`FEATURE_COLUMNS`, matching the processed dataset's schema) instead of constructing a
+  DataFrame.
 
-Once deployed, test it (run from the `terraform/` directory, or drop `-raw sagemaker_endpoint_name`'s
-implicit local dir and add `-chdir=terraform` if running from the repo root):
+Test a deployed endpoint:
 
 ```bash
 cat > /tmp/payload.json <<'EOF'
@@ -169,54 +168,44 @@ aws sagemaker-runtime invoke-endpoint \
   /tmp/response.json && cat /tmp/response.json
 ```
 
-`--cli-binary-format raw-in-base64-out` is required with AWS CLI v2 — it treats blob parameters
-like `--body` as raw text instead of expecting pre-base64-encoded input, which is the v2 default.
-Confirmed working: `[{"churn_probability": 0.8096558319067937, "churn_prediction": 1}]` — matches
-the local dry-run prediction exactly, for the same new-customer/month-to-month test record.
+`--cli-binary-format raw-in-base64-out` is required with AWS CLI v2, which treats binary
+parameters as base64-encoded by default.
 
-The IAM execution role ([terraform/iam.tf](terraform/iam.tf)) is scoped to exactly what the
-endpoint needs — read access to its one model artifact prefix in S3, and permission to write its
-own CloudWatch logs — rather than the broad `AmazonSageMakerFullAccess` managed policy.
+The IAM execution role ([iam.tf](terraform/iam.tf)) is scoped to exactly what the endpoint
+needs — read access to its model artifact prefix in S3 and permission to write its own
+CloudWatch logs — rather than a broad managed policy.
 
 ## CI/CD
 
-[.github/workflows/train-validate-deploy.yml](.github/workflows/train-validate-deploy.yml) runs on
-every push to `main` that touches `src/churn/`, `config/`, a DVC pointer file, or `terraform/`
-(plus manual triggering via `workflow_dispatch`). One job, sequential steps:
+[train-validate-deploy.yml](.github/workflows/train-validate-deploy.yml) runs on every push to
+`main` that touches the source code, config, versioned data, or infrastructure, plus on manual
+trigger. A single job runs sequentially:
 
 ```
-terraform init (learn the bucket name) → dvc pull → pull shared mlflow.db →
-train → push shared mlflow.db → quality gate → package → terraform apply
+resolve data bucket → pull data → sync MLflow history →
+train → quality gate → package → deploy
 ```
 
-The **quality gate** ([src/churn/training/gate.py](src/churn/training/gate.py)) is what makes this
-a real gate and not just automation with extra steps: it checks the freshly-trained champion's
-`recall` against a threshold (`config/train_config.yaml`, currently `>= 0.70`) and exits non-zero
-if it doesn't clear the bar. GitHub Actions stops the job on any failed step by default — no extra
-conditional logic was needed to make "package" and "deploy" not run when the gate fails, that's
-just what a failed step does.
+The [quality gate](src/churn/training/gate.py) checks the newly trained champion's recall against
+a threshold defined in `train_config.yaml` and exits non-zero if it isn't met. GitHub Actions
+stops the job on any failed step, so a failing gate blocks packaging and deployment without any
+additional conditional logic.
 
-Deliberately a **different metric than model selection**: `primary_metric` (ROC-AUC) picks the
-best of the candidates trained this run; `quality_gate` decides whether that winner is actually
-good enough to ship. For churn, missing an actual churner costs more than a false alarm, so the
-gate specifically checks recall rather than reusing the selection metric.
+The gate deliberately checks a different metric than model selection: ROC-AUC picks the best
+candidate among those trained in a given run, while the gate's recall threshold decides whether
+that candidate is good enough to ship. For churn prediction, missing an actual churner is costlier
+than a false alarm, which is why the gate is built around recall specifically.
 
-**Two pieces of infrastructure this needed that weren't obvious up front:**
-- **Remote Terraform state.** State was local-only (`terraform/terraform.tfstate`, gitignored)
-  through Phase 4 — fine when only one laptop ever runs `terraform apply`. Once CI runs it too,
-  both need to see the same state or CI will try to recreate everything from scratch and collide
-  with what already exists. Fixed with an S3 backend ([terraform/backend.tf](terraform/backend.tf))
-  pointing at a **separate, stable-named bucket** — not the DVC data bucket, since that one gets
-  destroyed and recreated across `make destroy`/`apply` cycles, which would be self-defeating for
-  something meant to persist. That state bucket is created once via plain AWS CLI (not Terraform —
-  Terraform can't bootstrap its own backend) and isn't touched by `make destroy`.
-- **A scoped CI identity.** [terraform/iam_ci.tf](terraform/iam_ci.tf) creates an IAM user with a
-  policy limited to exactly what this pipeline does — the two S3 buckets, the specific SageMaker
-  execution role, and this project's specific model/endpoint-config/endpoint resources — not
-  account-wide access. Authenticates via a static access key stored as GitHub repository secrets
-  (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`), not OIDC federation — simpler to set up, the
-  standard tradeoff being a long-lived credential sitting in GitHub's secret store instead of
-  short-lived per-run tokens.
+Two pieces of supporting infrastructure make this work:
+
+- **Remote Terraform state.** A local state file is sufficient when only one machine runs
+  `terraform apply`; once CI does too, both need a shared view of state. [backend.tf](terraform/backend.tf)
+  configures an S3 backend pointing at a separate, stable bucket — not the data bucket, which is
+  destroyed and recreated across teardown cycles.
+- **A scoped CI identity.** [iam_ci.tf](terraform/iam_ci.tf) defines an IAM user with a managed
+  policy limited to the specific S3 buckets, SageMaker execution role, and SageMaker resources
+  this pipeline manages. Authentication uses a static access key stored as GitHub repository
+  secrets.
 
 ## Monitoring
 
@@ -224,47 +213,57 @@ gate specifically checks recall rather than reusing the selection metric.
 make check-drift   # compares a synthetic drifted sample against the training baseline
 ```
 
-This project has no real production traffic to check for drift against, so
-[src/churn/monitoring/drift.py](src/churn/monitoring/drift.py) defaults to generating a
-deliberately-perturbed copy of the training data (`--synthetic`) as a stand-in — a 3x scale shift
-on `MonthlyCharges` and a categorical column forced to a single value, both large enough for
-[Evidently](https://www.evidentlyai.com/) to clearly flag. Point `--current` at a real CSV instead
-once there's real data worth checking. The script reports the share of drifted columns as a custom
-CloudWatch metric (`ChurnMLOps/DriftedColumnShare`), which
-[terraform/monitoring.tf](terraform/monitoring.tf) has an alarm watching (`> 0.3`, i.e. more than
-30% of columns drifted).
+[drift.py](src/churn/monitoring/drift.py) uses [Evidently](https://www.evidentlyai.com/) to
+compare incoming data against the training baseline. Since this project has no live production
+traffic, the default mode generates a synthetically perturbed sample to demonstrate detection;
+pointing `--current` at a real CSV compares against actual data instead. The share of drifted
+columns is reported as a custom CloudWatch metric (`ChurnMLOps/DriftedColumnShare`), and
+[monitoring.tf](terraform/monitoring.tf) defines an alarm that fires above a 30% threshold.
 
-Deliberately **manual, not scheduled** — no live traffic means no principled schedule to run this
-on, so it's a command you run when you want a reading, not a cron job pushing meaningless
-"still no drift against no traffic" data points forever. The alarm has no SNS/email notification
-wired up either — its state is visible via `aws cloudwatch describe-alarms --alarm-names
-$(terraform -chdir=terraform output -raw drift_alarm_name)` or the console, kept intentionally
-simple for a project where nothing is actually watching it continuously.
+The check runs on demand rather than on a schedule, since there is no live traffic to justify a
+fixed cadence.
 
-## Roadmap
+## Design decisions
 
-- [x] Phase 1 — Repo scaffold, env setup
-- [x] Phase 2 — Data ingestion + DVC versioning (S3 remote)
-- [x] Phase 3 — Training + MLflow tracking/registry
-- [x] Phase 4 — SageMaker packaging + Terraform infra
-- [x] Phase 5 — CI/CD with a real quality gate
-- [ ] Phase 6 — Drift monitoring (Evidently + CloudWatch)
-- [ ] Phase 7 — Architecture diagram, write-up, cost teardown, resume bullets
+**SageMaker Serverless Inference over a real-time endpoint.** A real-time endpoint bills
+continuously for as long as it exists, regardless of traffic — roughly $36/month for an
+`ml.t2.medium` left running. Serverless Inference scales to zero and bills per invocation, at the
+cost of cold-start latency on the first request after an idle period. For a project with
+intermittent, low-volume traffic, that tradeoff favors serverless clearly.
 
-## Why X over Y
+**A shared SQLite tracking store over a standing MLflow server.** A dedicated tracking server
+backed by Postgres is the standard production setup, but it requires an always-on service. Syncing
+the SQLite tracking database through S3 — pulled before training, pushed back after, on both local
+and CI runs — avoids that cost while keeping registry history continuous. The tradeoff is no
+concurrent-write safety, acceptable for a single-operator project but not for a team.
 
-_Coming in Phase 7 — 2-3 real design decisions with tradeoffs._
+**Position-based feature selection over bundling pandas into the serving container.** AWS's
+prebuilt SageMaker scikit-learn container doesn't include pandas, and its mechanism for installing
+additional dependencies at runtime is unreliable for custom inference scripts. Rather than work
+around that, the model's preprocessing selects columns by position instead of by name, so the
+inference script never needs pandas or a DataFrame at all — one fewer dependency in the serving
+path.
 
 ## Cost & cleanup
 
 ```bash
-make destroy   # terraform destroy — tears down the SageMaker endpoint, IAM role, and S3 bucket
+make destroy
 ```
 
-Interactive — Terraform will ask you to confirm before deleting anything. Run this when you're
-done with a session; the serverless endpoint doesn't bill per-hour while idle, but the S3 bucket
-and the endpoint's own existence aren't free forever either, and this is a portfolio project, not
-a service anyone depends on staying up.
+Tears down everything Terraform manages: the SageMaker endpoint, endpoint configuration, and
+model; the SageMaker execution role; the CI IAM user and policy; the data bucket; and the drift
+alarm.
+
+The Terraform state bucket is intentionally excluded, since it needs to persist across
+destroy/rebuild cycles of everything else. It holds only a small state file and costs
+effectively nothing to leave in place. To remove it as well:
+
+```bash
+aws s3 rb "s3://mlops-tfstate-$(aws sts get-caller-identity --query Account --output text)" --force
+```
+
+Ongoing cost while deployed but idle is effectively zero: the serverless endpoint doesn't bill
+per hour, and S3 storage for this project's data and state amounts to fractions of a cent.
 
 ## License
 

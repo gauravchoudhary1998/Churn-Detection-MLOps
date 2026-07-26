@@ -1,7 +1,5 @@
-"""Export the champion model from the MLflow registry and package it for
-SageMaker: model.joblib + code/inference.py, tarred into build/model.tar.gz.
-Terraform uploads this tarball to S3 and points the SageMaker Model
-resource at it — this script only produces the local file.
+"""Package the champion model for SageMaker: model.joblib + code/inference.py,
+tarred into build/model.tar.gz.
 
 Usage:
     python -m churn.inference.package

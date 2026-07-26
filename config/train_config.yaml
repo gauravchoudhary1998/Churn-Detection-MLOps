@@ -7,18 +7,10 @@ random_state: 42
 experiment_name: churn-prediction
 registered_model_name: churn-classifier
 
-# Metric used to pick which candidate gets registered. ROC-AUC is
-# threshold-independent, which matters here since we never tuned a decision
-# threshold — it just compares how well each model ranks churners overall.
+# Metric used to select the best candidate.
 primary_metric: roc_auc
 
-# CI/CD quality gate (Phase 5): a DIFFERENT metric than primary_metric,
-# deliberately. primary_metric picks the best of the candidates trained this
-# run; quality_gate decides whether that winner is good enough to deploy at
-# all. For churn, missing an actual churner (a false negative) is the
-# costlier mistake than a false alarm, so the gate checks recall — the
-# selection metric ranks candidates well overall, but wouldn't by itself
-# catch a model that regressed specifically at catching churners.
+# Separate metric used to gate deployment.
 quality_gate:
   metric: recall
   min_value: 0.70

@@ -1,13 +1,7 @@
-# Runtime dependencies, added incrementally as each phase needs them.
 pandas==2.3.3
 dvc[s3]==3.67.1
 kaggle==1.8.4
-
-# Pinned to 1.4.2, NOT the latest scikit-learn: this is the newest version
-# AWS's prebuilt SageMaker scikit-learn inference container supports
-# (sagemaker-scikit-learn:1.4-2). A model pickled with a newer sklearn is not
-# guaranteed to unpickle correctly in an older one, so training and serving
-# must use the same version deliberately, not coincidentally.
+# 1.4.2, not latest: the newest version AWS's prebuilt SageMaker container supports.
 scikit-learn==1.4.2
 joblib==1.5.3
 mlflow==3.14.0

@@ -16,10 +16,6 @@ resource "aws_iam_role" "sagemaker_execution" {
   assume_role_policy = data.aws_iam_policy_document.sagemaker_assume_role.json
 }
 
-# Deliberately scoped instead of attaching the AmazonSageMakerFullAccess
-# managed policy: this role can only read the one model artifact prefix,
-# pull the one prebuilt container image it's deployed against, and write its
-# own CloudWatch logs/metrics — nothing else in the account.
 data "aws_iam_policy_document" "sagemaker_execution" {
   statement {
     sid       = "ReadModelArtifact"
@@ -47,24 +43,19 @@ data "aws_iam_policy_document" "sagemaker_execution" {
       "logs:PutLogEvents",
       "logs:DescribeLogStreams",
     ]
-    # Actual log group SageMaker creates is /aws/sagemaker/Endpoints/<endpoint-name>.
     resources = ["arn:aws:logs:${var.aws_region}:${data.aws_caller_identity.current.account_id}:log-group:/aws/sagemaker/*"]
   }
 
   statement {
     sid       = "EndpointMetrics"
     actions   = ["cloudwatch:PutMetricData"]
-    resources = ["*"] # PutMetricData has no resource-level permissions to scope to.
+    resources = ["*"]
   }
 
-  # SageMaker uses this role's credentials, not a separate service-level
-  # pull, to fetch the container image — this is required even though it's
-  # an AWS-owned prebuilt image, not a custom one. Confirmed against AWS's
-  # own CreateModel execution-role docs (initially missed this).
   statement {
     sid       = "PullPrebuiltContainerAuth"
     actions   = ["ecr:GetAuthorizationToken"]
-    resources = ["*"] # This action has no resource-level permissions either.
+    resources = ["*"]
   }
 
   statement {

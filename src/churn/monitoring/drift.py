@@ -1,9 +1,5 @@
-"""Data drift check: compares current data against the training baseline
-using Evidently, and reports a summary metric to CloudWatch.
-
-This project has no real production traffic to check drift against, so
---synthetic generates a deliberately-perturbed copy of the training data as
-a stand-in. Point --current at a real CSV once there's real data to check.
+"""Compares current data against the training baseline using Evidently and
+reports a summary metric to CloudWatch.
 
 Usage:
     python -m churn.monitoring.drift --synthetic
@@ -27,9 +23,6 @@ CLOUDWATCH_METRIC_NAME = "DriftedColumnShare"
 
 
 def make_synthetic_current(reference: pd.DataFrame) -> pd.DataFrame:
-    # Large enough shifts for Evidently to clearly flag both columns:
-    # a 3x scale shift on a numeric column, and a categorical column forced
-    # to a single value instead of its normal spread.
     current = reference.copy()
     current["MonthlyCharges"] = current["MonthlyCharges"] * 3.0
     current["Contract"] = "Month-to-month"

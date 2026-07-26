@@ -1,5 +1,4 @@
-# Requires build/model.tar.gz to already exist locally — run
-# `make package-model` before `terraform apply` (see README).
+# Requires build/model.tar.gz — run `make package-model` first.
 
 resource "aws_s3_object" "model_artifact" {
   bucket = aws_s3_bucket.dvc_store.id
@@ -8,10 +7,6 @@ resource "aws_s3_object" "model_artifact" {
   etag   = filemd5("${path.module}/../build/model.tar.gz")
 }
 
-# Resolves AWS's prebuilt scikit-learn container image URI for the current
-# region instead of hardcoding a per-region ECR account ID. 1.4-2 is
-# deliberately not the newest scikit-learn — it's the newest version this
-# prebuilt container supports (see requirements.txt for the matching pin).
 data "aws_sagemaker_prebuilt_ecr_image" "sklearn" {
   repository_name = "sagemaker-scikit-learn"
   image_tag       = "1.4-2-cpu-py3"
@@ -28,12 +23,7 @@ resource "aws_sagemaker_model" "churn" {
     environment = {
       SAGEMAKER_PROGRAM          = "inference.py"
       SAGEMAKER_SUBMIT_DIRECTORY = "/opt/ml/model/code"
-      # Without this, the container's own mechanism for installing
-      # inference.py as a package fails (pip falls back to a --user install
-      # the serving process can't see) and the model process crashes with
-      # "No module named 'inference'". Pointing PYTHONPATH straight at the
-      # script's directory means it's found directly, no install needed.
-      PYTHONPATH = "/opt/ml/model/code"
+      PYTHONPATH                 = "/opt/ml/model/code"
     }
   }
 }
@@ -45,8 +35,6 @@ resource "aws_sagemaker_endpoint_configuration" "churn" {
     variant_name = "AllTraffic"
     model_name   = aws_sagemaker_model.churn.name
 
-    # Serverless, not a real-time always-on instance: scales to zero between
-    # requests, so there's no idle-hour cost while this endpoint just exists.
     serverless_config {
       max_concurrency   = 5
       memory_size_in_mb = 2048

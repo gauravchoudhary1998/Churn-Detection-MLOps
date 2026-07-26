@@ -1,7 +1,3 @@
-# S3 bucket used as the DVC remote for versioned datasets and model artifacts.
-# Bucket names are globally unique across all of AWS, so a random suffix is
-# appended to avoid collisions with buckets outside this account.
-
 resource "random_string" "bucket_suffix" {
   length  = 6
   special = false
@@ -9,12 +5,7 @@ resource "random_string" "bucket_suffix" {
 }
 
 resource "aws_s3_bucket" "dvc_store" {
-  bucket = "${var.project_name}-${random_string.bucket_suffix.result}"
-
-  # Versioning means old versions/delete markers stick around even after
-  # objects are "deleted" — without this, `terraform destroy` fails with
-  # BucketNotEmpty. This is a solo portfolio project's teardown bucket, not
-  # shared production data, so let destroy actually empty it.
+  bucket        = "${var.project_name}-${random_string.bucket_suffix.result}"
   force_destroy = true
 
   tags = {
@@ -50,8 +41,6 @@ resource "aws_s3_bucket_public_access_block" "dvc_store" {
   restrict_public_buckets = true
 }
 
-# Keeps costs predictable: old file versions (DVC pushes a new version per
-# `dvc add` + push) don't accumulate forever.
 resource "aws_s3_bucket_lifecycle_configuration" "dvc_store" {
   bucket = aws_s3_bucket.dvc_store.id
 

@@ -1,13 +1,4 @@
-"""SageMaker inference entry point for the churn classifier.
-
-Implements the four functions the SageMaker scikit-learn container looks
-for: model_fn, input_fn, predict_fn, output_fn. Packaged into model.tar.gz
-by churn.inference.package.
-
-No pandas here deliberately — the container doesn't have it installed, and
-the model's ColumnTransformer selects features by position (see train.py),
-so a plain list built in FEATURE_COLUMNS order is all prediction needs.
-"""
+"""SageMaker inference entry point: model_fn, input_fn, predict_fn, output_fn."""
 
 import json
 import os
@@ -16,8 +7,7 @@ import joblib
 
 MODEL_FILENAME = "model.joblib"
 
-# Must match data/processed/telco_churn_clean.csv's column order (minus the
-# Churn target) — this is the order train.py's ColumnTransformer expects.
+# Must match data/processed/telco_churn_clean.csv's column order.
 FEATURE_COLUMNS = [
     "gender", "SeniorCitizen", "Partner", "Dependents", "tenure",
     "PhoneService", "MultipleLines", "InternetService", "OnlineSecurity",

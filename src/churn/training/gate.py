@@ -1,6 +1,5 @@
-"""Quality gate for the champion model — the CI/CD step that can actually
-fail a deploy, not just automate one. Checks the metrics train.py already
-logged for the current champion against a configured threshold; exits
+"""Quality gate for the champion model. Checks the metrics train.py already
+logged for the current champion against a configured threshold and exits
 non-zero if it doesn't clear the bar.
 
 Usage:

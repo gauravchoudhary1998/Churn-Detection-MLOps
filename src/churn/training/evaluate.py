@@ -1,8 +1,4 @@
-"""Evaluation metrics for the churn classifier.
-
-Kept separate from train.py so Phase 5's CI/CD quality gate can import the
-same metric computation instead of reimplementing it.
-"""
+"""Evaluation metrics for the churn classifier."""
 
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 

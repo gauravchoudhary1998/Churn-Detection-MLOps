@@ -1,15 +1,14 @@
 output "dvc_bucket_name" {
-  description = "S3 bucket name to use as the DVC remote (s3://<this>/dvc-store)."
+  description = "S3 bucket used as the DVC remote."
   value       = aws_s3_bucket.dvc_store.bucket
 }
 
 output "sagemaker_endpoint_name" {
-  description = "Endpoint name to pass to `aws sagemaker-runtime invoke-endpoint`."
+  description = "SageMaker endpoint name."
   value       = aws_sagemaker_endpoint.churn.name
 }
 
 output "drift_alarm_name" {
-  description = "CloudWatch alarm watching data drift — `aws cloudwatch describe-alarms --alarm-names <this>` to check its state."
+  description = "CloudWatch alarm watching data drift."
   value       = aws_cloudwatch_metric_alarm.data_drift.alarm_name
 }
-

@@ -20,9 +20,6 @@ kaggle.json
 .aws/
 
 # --- DVC ---
-# DVC manages ignoring actual data files itself, per-directory, via the
-# data/raw/.gitignore and data/processed/.gitignore it generates on `dvc add`
-# (a blanket rule here would git-ignore the .dvc pointer files too).
 /.dvc/cache
 /.dvc/tmp
 
@@ -53,3 +50,7 @@ terraform/crash.log
 .DS_Store
 .vscode/
 .idea/
+
+# --- Personal ---
+docs/resume-bullets.md
+docs/build-log.md
