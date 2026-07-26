@@ -2,4 +2,4 @@
     analytics = false
     remote = storage
 ['remote "storage"']
-    url = s3://mlops-dvc-yswpy5/dvc-store
+    url = s3://mlops-dvc-jl7448/dvc-store

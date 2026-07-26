@@ -12,6 +12,17 @@ registered_model_name: churn-classifier
 # threshold — it just compares how well each model ranks churners overall.
 primary_metric: roc_auc
 
+# CI/CD quality gate (Phase 5): a DIFFERENT metric than primary_metric,
+# deliberately. primary_metric picks the best of the candidates trained this
+# run; quality_gate decides whether that winner is good enough to deploy at
+# all. For churn, missing an actual churner (a false negative) is the
+# costlier mistake than a false alarm, so the gate checks recall — the
+# selection metric ranks candidates well overall, but wouldn't by itself
+# catch a model that regressed specifically at catching churners.
+quality_gate:
+  metric: recall
+  min_value: 0.70
+
 candidates:
   - name: logistic_regression
     params:

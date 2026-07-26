@@ -15,3 +15,9 @@ variable "project_name" {
   type        = string
   default     = "mlops-dvc"
 }
+
+variable "tfstate_bucket" {
+  description = "Name of the separate, stable bucket holding Terraform's own state (created once, outside Terraform — see backend.tf). Not the same as the DVC data bucket. Must match backend.tf's literal bucket name (that block can't reference this variable)."
+  type        = string
+  default     = "mlops-tfstate-729723728304"
+}

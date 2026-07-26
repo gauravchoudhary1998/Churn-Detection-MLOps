@@ -11,6 +11,12 @@ resource "random_string" "bucket_suffix" {
 resource "aws_s3_bucket" "dvc_store" {
   bucket = "${var.project_name}-${random_string.bucket_suffix.result}"
 
+  # Versioning means old versions/delete markers stick around even after
+  # objects are "deleted" — without this, `terraform destroy` fails with
+  # BucketNotEmpty. This is a solo portfolio project's teardown bucket, not
+  # shared production data, so let destroy actually empty it.
+  force_destroy = true
+
   tags = {
     Project = "churn-detection-mlops"
     Purpose = "dvc-remote-storage"

@@ -2,7 +2,7 @@ PYTHON := /opt/homebrew/opt/python@3.11/bin/python3.11
 VENV := .venv
 VENV_BIN := $(VENV)/bin
 
-.PHONY: setup install download-data prepare-data train mlflow-ui package-model destroy clean
+.PHONY: setup install download-data prepare-data train gate mlflow-ui package-model destroy clean
 
 setup:
 	$(PYTHON) -m venv $(VENV)
@@ -22,6 +22,9 @@ prepare-data:
 train:
 	$(VENV_BIN)/python -m churn.training.train
 
+gate:
+	$(VENV_BIN)/python -m churn.training.gate
+
 mlflow-ui:
 	# port 5000 is macOS's AirPlay Receiver (ControlCenter) on most machines —
 	# it'll intercept requests and return 403, so this stays off the default port.
@@ -39,6 +42,3 @@ destroy:
 clean:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	rm -rf build
-
-# `make destroy` (AWS teardown) lands in Phase 4 once Terraform-managed
-# resources exist to tear down.

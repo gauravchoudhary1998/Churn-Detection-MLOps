@@ -159,6 +159,45 @@ The IAM execution role ([terraform/iam.tf](terraform/iam.tf)) is scoped to exact
 endpoint needs — read access to its one model artifact prefix in S3, and permission to write its
 own CloudWatch logs — rather than the broad `AmazonSageMakerFullAccess` managed policy.
 
+## CI/CD
+
+[.github/workflows/train-validate-deploy.yml](.github/workflows/train-validate-deploy.yml) runs on
+every push to `main` that touches `src/churn/`, `config/`, a DVC pointer file, or `terraform/`
+(plus manual triggering via `workflow_dispatch`). One job, sequential steps:
+
+```
+pull data (dvc pull) → train → quality gate → package → terraform apply
+```
+
+The **quality gate** ([src/churn/training/gate.py](src/churn/training/gate.py)) is what makes this
+a real gate and not just automation with extra steps: it checks the freshly-trained champion's
+`recall` against a threshold (`config/train_config.yaml`, currently `>= 0.70`) and exits non-zero
+if it doesn't clear the bar. GitHub Actions stops the job on any failed step by default — no extra
+conditional logic was needed to make "package" and "deploy" not run when the gate fails, that's
+just what a failed step does.
+
+Deliberately a **different metric than model selection**: `primary_metric` (ROC-AUC) picks the
+best of the candidates trained this run; `quality_gate` decides whether that winner is actually
+good enough to ship. For churn, missing an actual churner costs more than a false alarm, so the
+gate specifically checks recall rather than reusing the selection metric.
+
+**Two pieces of infrastructure this needed that weren't obvious up front:**
+- **Remote Terraform state.** State was local-only (`terraform/terraform.tfstate`, gitignored)
+  through Phase 4 — fine when only one laptop ever runs `terraform apply`. Once CI runs it too,
+  both need to see the same state or CI will try to recreate everything from scratch and collide
+  with what already exists. Fixed with an S3 backend ([terraform/backend.tf](terraform/backend.tf))
+  pointing at a **separate, stable-named bucket** — not the DVC data bucket, since that one gets
+  destroyed and recreated across `make destroy`/`apply` cycles, which would be self-defeating for
+  something meant to persist. That state bucket is created once via plain AWS CLI (not Terraform —
+  Terraform can't bootstrap its own backend) and isn't touched by `make destroy`.
+- **A scoped CI identity.** [terraform/iam_ci.tf](terraform/iam_ci.tf) creates an IAM user with a
+  policy limited to exactly what this pipeline does — the two S3 buckets, the specific SageMaker
+  execution role, and this project's specific model/endpoint-config/endpoint resources — not
+  account-wide access. Authenticates via a static access key stored as GitHub repository secrets
+  (`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`), not OIDC federation — simpler to set up, the
+  standard tradeoff being a long-lived credential sitting in GitHub's secret store instead of
+  short-lived per-run tokens.
+
 ## Roadmap
 
 - [x] Phase 1 — Repo scaffold, env setup

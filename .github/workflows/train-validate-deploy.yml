@@ -1,0 +1,68 @@
+name: Train, Validate, Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/churn/**"
+      - "config/**"
+      - "data/**/*.dvc"
+      - "requirements.txt"
+      - "terraform/**"
+      - ".github/workflows/train-validate-deploy.yml"
+  workflow_dispatch: {}
+
+env:
+  AWS_REGION: us-west-1
+
+jobs:
+  train-validate-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements-dev.txt
+          pip install -e .
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Pull versioned data
+        run: dvc pull
+
+      - name: Train candidates and register champion
+        run: python -m churn.training.train
+
+      # If this fails, the job stops here — package/deploy steps below never
+      # run. That's GitHub Actions' default behavior for a failed step, not
+      # extra logic we had to write.
+      - name: Quality gate
+        run: python -m churn.training.gate
+
+      - name: Package model for SageMaker
+        run: python -m churn.inference.package
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.15.8"
+
+      - name: Terraform init
+        working-directory: terraform
+        run: terraform init
+
+      - name: Terraform apply
+        working-directory: terraform
+        run: terraform apply -auto-approve

@@ -3,3 +3,6 @@
 aws_region   = "us-west-1"
 aws_profile  = "default"
 project_name = "mlops-dvc"
+# tfstate_bucket defaults to variables.tf's value — only override here if
+# you created the state bucket (see README's CI/CD section) under a
+# different name.
