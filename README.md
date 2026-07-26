@@ -100,6 +100,25 @@ store — the Model Registry requires a database-backed store, so a plain `file:
 train and log fine but fail at the registration step. Everything runs locally, no server
 process or AWS resources needed for this phase.
 
+**A local file doesn't survive CI's ephemeral runners on its own.** Every GitHub Actions run
+starts on a brand-new VM — without help, each run would create its own empty `mlflow.db`, register
+its champion as "version 1" every single time, and lose all of it the moment the job ends. The
+CI/CD workflow works around this by treating `mlflow.db` the same way DVC treats data: pull the
+shared copy from S3 before training, push the updated one back after (`mlflow/` prefix in the same
+bucket). To see CI's training history in your own `make mlflow-ui`:
+
+```bash
+make mlflow-pull   # fetch the shared history CI has been building
+make mlflow-ui
+```
+
+Not automatic on every `make train` — most local runs are just iteration, and `make mlflow-push`
+is there when you actually want a local result to join the shared history. The accepted
+limitation: this doesn't handle concurrent writers safely (two simultaneous CI runs could clobber
+each other's history), which is fine for a solo project with sequential pushes but wouldn't be for
+a team — the real production fix would be a standing MLflow Tracking Server backed by a proper
+database, deliberately not built here to stay serverless/cost-conscious.
+
 ## Deploy
 
 ```bash
@@ -166,7 +185,8 @@ every push to `main` that touches `src/churn/`, `config/`, a DVC pointer file, o
 (plus manual triggering via `workflow_dispatch`). One job, sequential steps:
 
 ```
-pull data (dvc pull) → train → quality gate → package → terraform apply
+terraform init (learn the bucket name) → dvc pull → pull shared mlflow.db →
+train → push shared mlflow.db → quality gate → package → terraform apply
 ```
 
 The **quality gate** ([src/churn/training/gate.py](src/churn/training/gate.py)) is what makes this
@@ -204,7 +224,7 @@ gate specifically checks recall rather than reusing the selection metric.
 - [x] Phase 2 — Data ingestion + DVC versioning (S3 remote)
 - [x] Phase 3 — Training + MLflow tracking/registry
 - [x] Phase 4 — SageMaker packaging + Terraform infra
-- [ ] Phase 5 — CI/CD with a real quality gate
+- [x] Phase 5 — CI/CD with a real quality gate
 - [ ] Phase 6 — Drift monitoring (Evidently + CloudWatch)
 - [ ] Phase 7 — Architecture diagram, write-up, cost teardown, resume bullets
 

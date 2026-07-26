@@ -1,8 +1,9 @@
 # IAM identity for GitHub Actions (static access key, per user's choice —
 # no OIDC federation in this project). Scoped to exactly what the CI
-# pipeline does: `dvc pull` (read the data bucket), read/write Terraform
-# state (the separate state bucket), and manage this project's specific
-# SageMaker + IAM resources — not account-wide access.
+# pipeline does: `dvc pull` + syncing the shared mlflow.db (both just object
+# access in the data bucket), read/write Terraform state (the separate
+# state bucket), and manage this project's specific SageMaker + IAM
+# resources — not account-wide access.
 
 resource "aws_iam_user" "ci" {
   name = "${var.project_name}-ci"

@@ -2,7 +2,7 @@ PYTHON := /opt/homebrew/opt/python@3.11/bin/python3.11
 VENV := .venv
 VENV_BIN := $(VENV)/bin
 
-.PHONY: setup install download-data prepare-data train gate mlflow-ui package-model destroy clean
+.PHONY: setup install download-data prepare-data train gate mlflow-ui mlflow-pull mlflow-push package-model destroy clean
 
 setup:
 	$(PYTHON) -m venv $(VENV)
@@ -32,6 +32,19 @@ mlflow-ui:
 
 package-model:
 	$(VENV_BIN)/python -m churn.inference.package
+
+# CI shares its training history through S3 the same way it shares data —
+# pull before you want to see CI's runs in `make mlflow-ui`, push after a
+# local run you want to keep in that shared history. Not automatic on every
+# `make train`, deliberately: most local runs are just iteration, not
+# everything needs to be published.
+mlflow-pull:
+	@BUCKET=$$(cd terraform && terraform output -raw dvc_bucket_name); \
+	aws s3 cp "s3://$$BUCKET/mlflow/mlflow.db" mlflow.db
+
+mlflow-push:
+	@BUCKET=$$(cd terraform && terraform output -raw dvc_bucket_name); \
+	aws s3 cp mlflow.db "s3://$$BUCKET/mlflow/mlflow.db"
 
 # Tears down every billable AWS resource this project created (SageMaker
 # endpoint, IAM role, S3 bucket). Interactive — terraform will ask you to
